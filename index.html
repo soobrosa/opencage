@@ -42,6 +42,7 @@ let userMarker;
 let poiMarkers = [];
 let userLocation = { lat: null, lon: null };
 let currentHighlightedPoi = null;
+let initialMapView = { lat: null, lon: null, zoom: 16 };
 
 // Calculate distance between two points using Haversine formula
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -82,11 +83,53 @@ function initMap(lat, lon) {
   userLocation.lat = lat;
   userLocation.lon = lon;
   
+  // Store initial map view for reset functionality
+  initialMapView.lat = lat;
+  initialMapView.lon = lon;
+  initialMapView.zoom = 16;
+  
   map = L.map('map').setView([lat, lon], 16);
   
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors'
   }).addTo(map);
+  
+  // Add custom reset control
+  const resetControl = L.Control.extend({
+    options: {
+      position: 'topleft'
+    },
+    
+    onAdd: function(map) {
+      const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-custom');
+      
+      container.style.backgroundColor = 'white';
+      container.style.backgroundImage = 'none';
+      container.style.width = '30px';
+      container.style.height = '30px';
+      container.style.cursor = 'pointer';
+      container.innerHTML = '🏠';
+      container.style.fontSize = '18px';
+      container.style.lineHeight = '30px';
+      container.style.textAlign = 'center';
+      container.title = 'Reset view to your location';
+      
+      container.onclick = function() {
+        map.setView([initialMapView.lat, initialMapView.lon], initialMapView.zoom);
+        userMarker.openPopup();
+        
+        // Clear any highlighted POI
+        if (currentHighlightedPoi) {
+          currentHighlightedPoi.classList.remove('highlighted');
+          currentHighlightedPoi = null;
+        }
+      };
+      
+      return container;
+    }
+  });
+  
+  map.addControl(new resetControl());
   
   // Add user location marker
   userMarker = L.marker([lat, lon], {
