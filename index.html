@@ -28,14 +28,45 @@
 <p id="status">Getting your location...</p>
 <p style="font-size: 0.9em; color: #666; margin-bottom: 1em;">💡 Click venues in the list to view on map, or click map markers to highlight in list</p>
 
+<div id="github-setup" style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; border-radius: 6px; margin-bottom: 1em; font-size: 0.9em;">
+  <strong>🔐 Secure GitHub Storage Setup:</strong> 
+  <span id="github-status">Check-ins are saved locally. To sync with GitHub:</span>
+  
+  <details style="margin-top: 8px;">
+    <summary style="cursor: pointer; font-weight: bold;">📋 Setup Options (Click to expand)</summary>
+    
+    <div style="margin-top: 8px;">
+      <strong>Option 1: Local Development (Secure)</strong>
+      <ol style="margin: 4px 0 0 20px; padding: 0;">
+        <li>Create a <a href="https://github.com/settings/tokens" target="_blank">GitHub Personal Access Token</a> with "repo" permissions</li>
+        <li>Copy <code>config.example.js</code> to <code>config.js</code></li>
+        <li>Add your token to <code>config.js</code> (this file is gitignored and won't be committed)</li>
+      </ol>
+      
+      <strong>Option 2: Vercel Deployment (Production)</strong>
+      <ol style="margin: 4px 0 0 20px; padding: 0;">
+        <li>In Vercel dashboard, go to your project settings</li>
+        <li>Add Environment Variable: <code>GITHUB_TOKEN</code> = your token</li>
+        <li>Redeploy your app - the token will be injected securely at build time</li>
+      </ol>
+      
+      <p style="margin: 8px 0 0 0; font-size: 0.85em; color: #666;">
+        💡 <strong>Security:</strong> Never commit tokens to git! Use config.js locally and environment variables in production.
+      </p>
+    </div>
+  </details>
+</div>
+
 <div class="container">
   <div id="map"></div>
   <div id="sidebar">
     <div id="pois"></div>
+    <div id="history" style="margin-top: 1em; padding-top: 1em; border-top: 1px solid #ddd;"></div>
   </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="config.js" onerror="console.log('config.js not found - using default config')"></script>
 <script>
 let map;
 let userMarker;
@@ -43,6 +74,16 @@ let poiMarkers = [];
 let userLocation = { lat: null, lon: null };
 let currentHighlightedPoi = null;
 let initialMapView = { lat: null, lon: null, zoom: 16 };
+let checkInHistory = [];
+
+// GitHub API configuration will be loaded from config.js
+let GITHUB_CONFIG = {
+  owner: 'soobrosa',
+  repo: 'opencage',
+  path: 'checkins.json',
+  token: '',
+  apiUrl: 'https://api.github.com'
+};
 
 // Calculate distance between two points using Haversine formula
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -76,6 +117,202 @@ function highlightPOIInList(poiId) {
       block: 'center' 
     });
   }
+}
+
+// GitHub API functions for storing check-ins
+async function loadCheckInHistory() {
+  if (!GITHUB_CONFIG.token) {
+    console.log('No GitHub token provided - using local storage fallback');
+    const stored = localStorage.getItem('poi-checkins');
+    checkInHistory = stored ? JSON.parse(stored) : [];
+    return;
+  }
+
+  try {
+    const response = await fetch(`${GITHUB_CONFIG.apiUrl}/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.path}`, {
+      headers: {
+        'Authorization': `token ${GITHUB_CONFIG.token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const content = atob(data.content.replace(/\s/g, ''));
+      checkInHistory = JSON.parse(content);
+    } else if (response.status === 404) {
+      // File doesn't exist yet, start with empty array
+      checkInHistory = [];
+    }
+  } catch (error) {
+    console.log('Failed to load check-in history from GitHub:', error);
+    // Fallback to local storage
+    const stored = localStorage.getItem('poi-checkins');
+    checkInHistory = stored ? JSON.parse(stored) : [];
+  }
+}
+
+async function saveCheckInHistory() {
+  // Always save to local storage as backup
+  localStorage.setItem('poi-checkins', JSON.stringify(checkInHistory));
+
+  if (!GITHUB_CONFIG.token) {
+    console.log('No GitHub token - saved to local storage only');
+    return;
+  }
+
+  try {
+    // First, get the current file SHA if it exists
+    let sha = null;
+    try {
+      const response = await fetch(`${GITHUB_CONFIG.apiUrl}/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.path}`, {
+        headers: {
+          'Authorization': `token ${GITHUB_CONFIG.token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        sha = data.sha;
+      }
+    } catch (e) {
+      // File might not exist, which is fine
+    }
+
+    // Create or update the file
+    const content = btoa(JSON.stringify(checkInHistory, null, 2));
+    const body = {
+      message: `Update check-ins: ${new Date().toISOString()}`,
+      content: content
+    };
+    
+    if (sha) {
+      body.sha = sha;
+    }
+
+    const response = await fetch(`${GITHUB_CONFIG.apiUrl}/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.path}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `token ${GITHUB_CONFIG.token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+    
+    console.log('Check-in history saved to GitHub successfully');
+  } catch (error) {
+    console.error('Failed to save to GitHub:', error);
+    // Data is still saved locally as fallback
+  }
+}
+
+async function addCheckIn(poi, name, type) {
+  const checkIn = {
+    id: Date.now().toString(),
+    name: name,
+    type: type,
+    coordinates: {
+      lat: poi.lat || poi.center?.lat,
+      lon: poi.lon || poi.center?.lon
+    },
+    timestamp: new Date().toISOString(),
+    date: new Date().toLocaleDateString(),
+    time: new Date().toLocaleTimeString()
+  };
+
+  checkInHistory.unshift(checkIn); // Add to beginning of array
+  await saveCheckInHistory();
+  updateCheckInDisplay();
+  
+  return checkIn;
+}
+
+function getCheckInCount(name) {
+  return checkInHistory.filter(checkIn => checkIn.name === name).length;
+}
+
+function updateCheckInDisplay() {
+  // Update any existing POI displays to show check-in counts
+  document.querySelectorAll('.poi').forEach((div, index) => {
+    const nameElement = div.querySelector('strong');
+    if (nameElement) {
+      const name = nameElement.textContent;
+      const count = getCheckInCount(name);
+      if (count > 0) {
+        // Add check-in badge if not already present
+        if (!div.querySelector('.checkin-badge')) {
+          const badge = document.createElement('span');
+          badge.className = 'checkin-badge';
+          badge.style.cssText = 'background: #4CAF50; color: white; padding: 2px 6px; border-radius: 10px; font-size: 0.8em; margin-left: 8px;';
+          badge.textContent = `✓ ${count}`;
+          nameElement.appendChild(badge);
+        } else {
+          // Update existing badge
+          div.querySelector('.checkin-badge').textContent = `✓ ${count}`;
+        }
+      }
+    }
+  });
+  
+  // Update history display
+  updateHistoryDisplay();
+}
+
+function showNotification(message) {
+  // Create notification element
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #333;
+    color: white;
+    padding: 12px 20px;
+    border-radius: 6px;
+    z-index: 10000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    opacity: 0;
+    transition: opacity 0.3s;
+  `;
+  notification.textContent = message;
+  
+  document.body.appendChild(notification);
+  
+  // Fade in
+  setTimeout(() => notification.style.opacity = '1', 100);
+  
+  // Remove after 3 seconds
+  setTimeout(() => {
+    notification.style.opacity = '0';
+    setTimeout(() => document.body.removeChild(notification), 300);
+  }, 3000);
+}
+
+function updateHistoryDisplay() {
+  const historyContainer = document.getElementById('history');
+  if (!historyContainer) return;
+  
+  if (checkInHistory.length === 0) {
+    historyContainer.innerHTML = '<p style="color: #666; font-style: italic;">No check-ins yet. Start exploring!</p>';
+    return;
+  }
+  
+  const recentCheckins = checkInHistory.slice(0, 5); // Show last 5
+  historyContainer.innerHTML = `
+    <h3 style="margin: 0 0 10px 0; font-size: 1.1em;">Recent Check-ins</h3>
+    ${recentCheckins.map(checkIn => `
+      <div style="margin-bottom: 8px; padding: 8px; background: #f9f9f9; border-radius: 4px; font-size: 0.9em;">
+        <strong>${checkIn.name}</strong><br>
+        <small style="color: #666;">${checkIn.type} • ${checkIn.date} ${checkIn.time}</small>
+      </div>
+    `).join('')}
+    ${checkInHistory.length > 5 ? `<small style="color: #666;">... and ${checkInHistory.length - 5} more</small>` : ''}
+  `;
 }
 
 function initMap(lat, lon) {
@@ -264,9 +501,36 @@ function displayPOIs(pois) {
     
     const btn = document.createElement("button");
     btn.textContent = "Check In";
-    btn.onclick = (e) => {
+    btn.onclick = async (e) => {
       e.stopPropagation(); // Prevent div click when button is clicked
-      alert(`Checked in to: ${poi.name}`);
+      
+      // Show loading state
+      btn.textContent = "Checking in...";
+      btn.disabled = true;
+      
+      try {
+        const checkIn = await addCheckIn(poi, poi.name, type);
+        btn.textContent = "✓ Checked In!";
+        btn.style.backgroundColor = "#4CAF50";
+        btn.style.color = "white";
+        
+        // Reset button after 2 seconds
+        setTimeout(() => {
+          btn.textContent = "Check In";
+          btn.disabled = false;
+          btn.style.backgroundColor = "";
+          btn.style.color = "";
+        }, 2000);
+        
+        // Show success message
+        showNotification(`✅ Checked in to ${poi.name}!`);
+        
+      } catch (error) {
+        console.error('Check-in failed:', error);
+        btn.textContent = "Check In";
+        btn.disabled = false;
+        showNotification(`❌ Check-in failed. Saved locally.`);
+      }
     };
     div.appendChild(btn);
 
@@ -307,29 +571,89 @@ function displayPOIs(pois) {
   const statusElement = document.getElementById("status");
   const originalText = statusElement.textContent;
   statusElement.textContent = originalText.replace(/Found \d+ POIs:/, `Found ${filteredPois.length} named POIs (${pois.length} total):`);
+  
+  // Update check-in display after POIs are loaded
+  setTimeout(updateCheckInDisplay, 100);
 }
 
 function showError(error) {
   document.getElementById("status").textContent = "Error: " + error.message;
 }
 
-navigator.geolocation.getCurrentPosition(async (position) => {
-  const lat = position.coords.latitude;
-  const lon = position.coords.longitude;
-
-  // Initialize the map with user's location
-  initMap(lat, lon);
-
-  document.getElementById("status").textContent = `Searching POIs near ${lat.toFixed(5)}, ${lon.toFixed(5)}...`;
-
-  try {
-    const pois = await fetchPOIs(lat, lon);
-    document.getElementById("status").textContent = `Found ${pois.length} POIs:`;
-    displayPOIs(pois);
-  } catch (err) {
-    showError(err);
+function loadConfig() {
+  // Priority order: external config.js > environment variables > defaults
+  
+  // 1. Try to load from external config.js file
+  if (window.GITHUB_CONFIG) {
+    GITHUB_CONFIG = { ...GITHUB_CONFIG, ...window.GITHUB_CONFIG };
+    console.log('✅ Loaded config from config.js');
+    return;
   }
-}, showError, { enableHighAccuracy: true });
+  
+  // 2. Try to load from Vercel environment variables (injected at build time)
+  if (typeof process !== 'undefined' && process.env) {
+    if (process.env.GITHUB_TOKEN) {
+      GITHUB_CONFIG.token = process.env.GITHUB_TOKEN;
+      console.log('✅ Loaded GitHub token from environment variable');
+      return;
+    }
+  }
+  
+  // 3. Try to load from global variables (set by Vercel at build time)
+  if (typeof VITE_GITHUB_TOKEN !== 'undefined') {
+    GITHUB_CONFIG.token = VITE_GITHUB_TOKEN;
+    console.log('✅ Loaded GitHub token from Vite environment');
+    return;
+  }
+  
+  console.log('📝 Using default config - add config.js or set GITHUB_TOKEN environment variable');
+}
+
+function updateGitHubStatus() {
+  const statusElement = document.getElementById('github-status');
+  if (GITHUB_CONFIG.token) {
+    statusElement.textContent = '✅ GitHub sync enabled - check-ins will be saved to your repository!';
+    statusElement.style.color = '#28a745';
+    document.getElementById('github-setup').style.background = '#d4edda';
+    document.getElementById('github-setup').style.borderColor = '#c3e6cb';
+  } else {
+    statusElement.textContent = 'Check-ins are saved locally. To sync with GitHub:';
+  }
+}
+
+// Initialize app
+async function initApp() {
+  // Load config from external file or environment variables
+  loadConfig();
+  
+  // Update GitHub status
+  updateGitHubStatus();
+  
+  // Load check-in history first
+  await loadCheckInHistory();
+  updateHistoryDisplay();
+
+  navigator.geolocation.getCurrentPosition(async (position) => {
+    const lat = position.coords.latitude;
+    const lon = position.coords.longitude;
+
+    // Initialize the map with user's location
+    initMap(lat, lon);
+
+    document.getElementById("status").textContent = `Searching POIs near ${lat.toFixed(5)}, ${lon.toFixed(5)}...`;
+
+    try {
+      const pois = await fetchPOIs(lat, lon);
+      document.getElementById("status").textContent = `Found ${pois.length} POIs:`;
+      displayPOIs(pois);
+    } catch (err) {
+      showError(err);
+    }
+  }, showError, { enableHighAccuracy: true });
+}
+
+// Start the app
+initApp();
 </script>
 
 </body>

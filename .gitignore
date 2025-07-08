@@ -1,0 +1,22 @@
+# Config file with secrets (do not commit)
+config.js
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db 
