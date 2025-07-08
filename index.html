@@ -115,6 +115,8 @@ function displayPOIs(pois) {
     return;
   }
 
+  const filteredPois = [];
+
   pois.forEach((poi, i) => {
     // Try multiple name sources from OpenStreetMap tags
     const name = poi.tags.name || 
@@ -124,8 +126,13 @@ function displayPOIs(pois) {
                  poi.tags.official_name || 
                  poi.tags.alt_name ||
                  poi.tags.ref ||
-                 `${poi.tags.amenity || 'POI'}`;
+                 null; // Don't fall back to amenity type
     
+    // Only show POIs with proper names that start with a capital letter
+    if (!name || !name.charAt(0).match(/[A-Z]/)) {
+      return;
+    }
+
     const type = poi.tags.amenity || "Unknown";
     const div = document.createElement("div");
     div.className = "poi";
@@ -140,7 +147,13 @@ function displayPOIs(pois) {
 
     // Add POI to map
     addPOIToMap(poi, name, type);
+    filteredPois.push(poi);
   });
+
+  // Update status with filtered count
+  const statusElement = document.getElementById("status");
+  const originalText = statusElement.textContent;
+  statusElement.textContent = originalText.replace(/Found \d+ POIs:/, `Found ${filteredPois.length} named POIs (${pois.length} total):`);
 }
 
 function showError(error) {
