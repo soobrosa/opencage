@@ -12,8 +12,9 @@
     #map { height: 400px; width: 100%; min-width: 300px; flex: 1; border: 1px solid #ccc; border-radius: 8px; }
     #sidebar { flex: 1; min-width: 300px; }
     #pois { margin-top: 1em; max-height: 350px; overflow-y: auto; }
-    .poi { margin-bottom: 1em; padding: 0.5em; border: 1px solid #ccc; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; }
+    .poi { margin-bottom: 1em; padding: 0.5em; border: 1px solid #ccc; border-radius: 8px; cursor: pointer; transition: all 0.3s; }
     .poi:hover { background-color: #f5f5f5; }
+    .poi.highlighted { background-color: #e3f2fd; border-color: #2196f3; box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3); }
     button { margin-top: 0.5em; }
     @media (max-width: 768px) {
       .container { flex-direction: column; }
@@ -25,6 +26,7 @@
 
 <h1>Nearby POI Check-In</h1>
 <p id="status">Getting your location...</p>
+<p style="font-size: 0.9em; color: #666; margin-bottom: 1em;">💡 Click venues in the list to view on map, or click map markers to highlight in list</p>
 
 <div class="container">
   <div id="map"></div>
@@ -39,6 +41,7 @@ let map;
 let userMarker;
 let poiMarkers = [];
 let userLocation = { lat: null, lon: null };
+let currentHighlightedPoi = null;
 
 // Calculate distance between two points using Haversine formula
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -51,6 +54,27 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   const distance = R * c; // Distance in kilometers
   return Math.round(distance * 1000); // Return distance in meters
+}
+
+// Function to highlight a POI in the list and scroll to it
+function highlightPOIInList(poiId) {
+  // Remove previous highlight
+  if (currentHighlightedPoi) {
+    currentHighlightedPoi.classList.remove('highlighted');
+  }
+  
+  // Find and highlight the new POI
+  const poiElement = document.getElementById(`poi-${poiId}`);
+  if (poiElement) {
+    poiElement.classList.add('highlighted');
+    currentHighlightedPoi = poiElement;
+    
+    // Scroll POI into view
+    poiElement.scrollIntoView({ 
+      behavior: 'smooth', 
+      block: 'center' 
+    });
+  }
 }
 
 function initMap(lat, lon) {
@@ -79,7 +103,7 @@ function initMap(lat, lon) {
   userMarker.bindPopup("📍 Your Location").openPopup();
 }
 
-function addPOIToMap(poi, name, type) {
+function addPOIToMap(poi, name, type, poiId) {
   const lat = poi.lat || poi.center?.lat;
   const lon = poi.lon || poi.center?.lon;
   
@@ -97,6 +121,12 @@ function addPOIToMap(poi, name, type) {
   }).addTo(map);
   
   marker.bindPopup(`<strong>${name}</strong><br><em>${type}</em>`);
+  
+  // Add click handler to marker to highlight corresponding POI in list
+  marker.on('click', function() {
+    highlightPOIInList(poiId);
+  });
+  
   poiMarkers.push(marker);
   
   return marker; // Return marker so we can reference it later
@@ -130,6 +160,9 @@ function displayPOIs(pois) {
   // Clear existing POI markers
   poiMarkers.forEach(marker => map.removeLayer(marker));
   poiMarkers = [];
+  
+  // Clear any existing highlight
+  currentHighlightedPoi = null;
 
   if (pois.length === 0) {
     container.textContent = "No POIs found within 500m.";
@@ -177,6 +210,7 @@ function displayPOIs(pois) {
     const type = poi.tags.amenity || "Unknown";
     const div = document.createElement("div");
     div.className = "poi";
+    div.id = `poi-${i}`; // Add unique ID for each POI
     
     // Format distance display
     const distanceText = poi.distance < 1000 ? 
@@ -195,14 +229,23 @@ function displayPOIs(pois) {
 
     container.appendChild(div);
 
-    // Add POI to map and get marker reference
-    const marker = addPOIToMap(poi, poi.name, type);
+    // Add POI to map and get marker reference (pass POI ID)
+    const marker = addPOIToMap(poi, poi.name, type, i);
     
     // Add click handler to POI div to zoom to location on map
     if (marker) {
       div.onclick = (e) => {
         // Don't trigger if button was clicked
         if (e.target.tagName === 'BUTTON') return;
+        
+        // Remove any existing highlight first
+        if (currentHighlightedPoi) {
+          currentHighlightedPoi.classList.remove('highlighted');
+        }
+        
+        // Highlight this POI
+        div.classList.add('highlighted');
+        currentHighlightedPoi = div;
         
         const poiLat = poi.lat || poi.center?.lat;
         const poiLon = poi.lon || poi.center?.lon;
