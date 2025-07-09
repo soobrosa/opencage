@@ -1,7 +1,4 @@
 {
   "buildCommand": "node build.js",
-  "outputDirectory": "dist",
-  "env": {
-    "GITHUB_TOKEN": "@github_token"
-  }
+  "outputDirectory": "dist"
 } 
