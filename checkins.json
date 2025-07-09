@@ -1,5 +1,17 @@
 [
   {
+    "id": "1752053527233",
+    "name": "Amapola Coworking",
+    "type": "coworking_space",
+    "coordinates": {
+      "lat": 52.5340487,
+      "lon": 13.3704077
+    },
+    "timestamp": "2025-07-09T09:32:07.233Z",
+    "date": "09/07/2025",
+    "time": "11:32:07"
+  },
+  {
     "id": "1752053496913",
     "name": "Esszimmer",
     "type": "restaurant",
