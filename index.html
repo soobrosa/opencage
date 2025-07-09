@@ -45,9 +45,11 @@
       
       <strong>Option 2: Vercel Deployment (Production)</strong>
       <ol style="margin: 4px 0 0 20px; padding: 0;">
-        <li>In Vercel dashboard, go to your project settings</li>
-        <li>Add Environment Variable: <code>GITHUB_TOKEN</code> = your token</li>
-        <li>Redeploy your app - the token will be injected securely at build time</li>
+        <li>Connect your GitHub repository to Vercel</li>
+        <li>In Vercel dashboard → Project Settings → Environment Variables</li>
+        <li>Add: <code>GITHUB_TOKEN</code> = your GitHub Personal Access Token</li>
+        <li>Deploy - Vercel runs <code>build.js</code> to inject the token securely</li>
+        <li>🎉 Your app can now save check-ins to GitHub from production!</li>
       </ol>
       
       <p style="margin: 8px 0 0 0; font-size: 0.85em; color: #666;">
@@ -581,32 +583,23 @@ function showError(error) {
 }
 
 function loadConfig() {
-  // Priority order: external config.js > environment variables > defaults
+  // Priority order: external config.js > Vercel injected > defaults
   
-  // 1. Try to load from external config.js file
+  // 1. Try to load from external config.js file (local development)
   if (window.GITHUB_CONFIG) {
     GITHUB_CONFIG = { ...GITHUB_CONFIG, ...window.GITHUB_CONFIG };
     console.log('✅ Loaded config from config.js');
     return;
   }
   
-  // 2. Try to load from Vercel environment variables (injected at build time)
-  if (typeof process !== 'undefined' && process.env) {
-    if (process.env.GITHUB_TOKEN) {
-      GITHUB_CONFIG.token = process.env.GITHUB_TOKEN;
-      console.log('✅ Loaded GitHub token from environment variable');
-      return;
-    }
-  }
-  
-  // 3. Try to load from global variables (set by Vercel at build time)
-  if (typeof VITE_GITHUB_TOKEN !== 'undefined') {
-    GITHUB_CONFIG.token = VITE_GITHUB_TOKEN;
-    console.log('✅ Loaded GitHub token from Vite environment');
+  // 2. Try to load from Vercel-injected token (production)
+  if (window.VERCEL_GITHUB_TOKEN) {
+    GITHUB_CONFIG.token = window.VERCEL_GITHUB_TOKEN;
+    console.log('✅ Loaded GitHub token from Vercel environment');
     return;
   }
   
-  console.log('📝 Using default config - add config.js or set GITHUB_TOKEN environment variable');
+  console.log('📝 Using default config - add config.js locally or set GITHUB_TOKEN in Vercel');
 }
 
 function updateGitHubStatus() {

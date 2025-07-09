@@ -48,7 +48,10 @@ This app uses **secure token management** - GitHub Personal Access Tokens are ne
    - Go to Project Settings → Environment Variables
    - Add: `GITHUB_TOKEN` = `your_token_here`
 
-3. **Deploy**: Vercel will inject the token securely at build time
+3. **Deploy**: 
+   - Vercel will run `node build.js` during deployment
+   - The build script injects your GitHub token securely into the client-side code
+   - The app can now save check-ins to your GitHub repository from production!
 
 ## How It Works 🛠️
 
