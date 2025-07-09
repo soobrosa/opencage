@@ -495,6 +495,23 @@ async function fetchPOIs(lat, lon) {
   });
 
   const data = await response.json();
+  
+  // Log sample POI data for inspection
+  if (data.elements.length > 0) {
+    console.log('📊 Sample POI data from OpenStreetMap:');
+    console.log('First POI:', data.elements[0]);
+    console.log('Available tags on first POI:', Object.keys(data.elements[0].tags || {}));
+    
+    // Show unique tag keys across all POIs
+    const allTags = new Set();
+    data.elements.forEach(element => {
+      if (element.tags) {
+        Object.keys(element.tags).forEach(key => allTags.add(key));
+      }
+    });
+    console.log('All unique tag keys across POIs:', Array.from(allTags).sort());
+  }
+  
   return data.elements;
 }
 
