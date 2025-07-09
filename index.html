@@ -277,10 +277,24 @@ async function saveCheckInHistory() {
 }
 
 async function addCheckIn(poi, name, type) {
+  // Build address from available components
+  let addressParts = [];
+  
+  if (poi.tags['addr:housenumber']) {
+    addressParts.push(poi.tags['addr:housenumber']);
+  }
+  
+  if (poi.tags['addr:street']) {
+    addressParts.push(poi.tags['addr:street']);
+  }
+  
+  const address = addressParts.length > 0 ? addressParts.join(' ') : null;
+
   const checkIn = {
     id: Date.now().toString(),
     name: name,
     type: type,
+    address: address, // Save the address!
     coordinates: {
       lat: poi.lat || poi.center?.lat,
       lon: poi.lon || poi.center?.lon
@@ -373,7 +387,8 @@ function updateHistoryDisplay() {
     ${recentCheckins.map(checkIn => `
       <div style="margin-bottom: 8px; padding: 8px; background: #f9f9f9; border-radius: 4px; font-size: 0.9em;">
         <strong>${checkIn.name}</strong><br>
-        <small style="color: #666;">${checkIn.type} • ${checkIn.date} ${checkIn.time}</small>
+        <small style="color: #666;">${checkIn.type}${checkIn.address ? ` • ${checkIn.address}` : ''}</small><br>
+        <small style="color: #999;">${checkIn.date} ${checkIn.time}</small>
       </div>
     `).join('')}
     ${checkInHistory.length > 5 ? `<small style="color: #666;">... and ${checkInHistory.length - 5} more</small>` : ''}
