@@ -277,18 +277,26 @@ async function saveCheckInHistory() {
 }
 
 async function addCheckIn(poi, name, type) {
+  // Debug: Log all available tags to see what address data exists
+  console.log('🔍 Check-in debug for:', name);
+  console.log('All POI tags:', poi.tags);
+  console.log('Address-related tags:', Object.keys(poi.tags).filter(key => key.includes('addr')));
+  
   // Build address from available components
   let addressParts = [];
   
   if (poi.tags['addr:housenumber']) {
     addressParts.push(poi.tags['addr:housenumber']);
+    console.log('✅ Found house number:', poi.tags['addr:housenumber']);
   }
   
   if (poi.tags['addr:street']) {
     addressParts.push(poi.tags['addr:street']);
+    console.log('✅ Found street:', poi.tags['addr:street']);
   }
   
   const address = addressParts.length > 0 ? addressParts.join(' ') : null;
+  console.log('📍 Final address:', address || 'No address data found');
 
   const checkIn = {
     id: Date.now().toString(),
