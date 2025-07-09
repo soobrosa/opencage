@@ -1,6 +1,9 @@
 # Config file with secrets (do not commit)
 config.js
 
+# User data files (do not commit)
+checkins.json
+
 # Dependencies
 node_modules/
 
