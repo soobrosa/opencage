@@ -465,7 +465,26 @@ function addPOIToMap(poi, name, type, poiId) {
     })
   }).addTo(map);
   
-  marker.bindPopup(`<strong>${name}</strong><br><em>${type}</em>`);
+  // Build address from available components
+  let addressParts = [];
+  
+  if (poi.tags['addr:housenumber']) {
+    addressParts.push(poi.tags['addr:housenumber']);
+  }
+  
+  if (poi.tags['addr:street']) {
+    addressParts.push(poi.tags['addr:street']);
+  }
+  
+  const address = addressParts.length > 0 ? addressParts.join(' ') : null;
+  
+  // Build popup content with address if available
+  let popupContent = `<strong>${name}</strong><br><em>${type}</em>`;
+  if (address) {
+    popupContent += `<br><small>📍 ${address}</small>`;
+  }
+  
+  marker.bindPopup(popupContent);
   
   // Add click handler to marker to highlight corresponding POI in list
   marker.on('click', function() {
@@ -579,7 +598,27 @@ function displayPOIs(pois) {
       `${poi.distance}m` : 
       `${(poi.distance / 1000).toFixed(1)}km`;
     
-    div.innerHTML = `<strong>${poi.name}</strong><br><em>${type}</em><br><small>📍 ${distanceText} away • Click to view on map</small><br>`;
+    // Build address from available components
+    let addressParts = [];
+    
+    if (poi.tags['addr:housenumber']) {
+      addressParts.push(poi.tags['addr:housenumber']);
+    }
+    
+    if (poi.tags['addr:street']) {
+      addressParts.push(poi.tags['addr:street']);
+    }
+    
+    const address = addressParts.length > 0 ? addressParts.join(' ') : null;
+    
+    // Build POI display content
+    let content = `<strong>${poi.name}</strong><br><em>${type}</em>`;
+    if (address) {
+      content += `<br><small>🏠 ${address}</small>`;
+    }
+    content += `<br><small>📍 ${distanceText} away • Click to view on map</small><br>`;
+    
+    div.innerHTML = content;
     
     const btn = document.createElement("button");
     btn.textContent = "Check In";
