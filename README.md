@@ -1,6 +1,6 @@
 # # POI Check-In App 📍
 
-A location-based web app for checking into nearby Points of Interest (POIs) with persistent data storage via GitHub API.
+A location-based web app for checking into nearby Points of Interest (POIs) with persistent data storage via GitHub API. ...
 
 ## Features ✨
 
