@@ -64,6 +64,14 @@
   <div id="sidebar">
     <div id="pois"></div>
     <div id="history" style="margin-top: 1em; padding-top: 1em; border-top: 1px solid #ddd;"></div>
+    
+    <!-- Debug Panel -->
+    <details id="debug-panel" style="margin-top: 1em; padding-top: 1em; border-top: 1px solid #ddd;">
+      <summary style="cursor: pointer; font-weight: bold; color: #666;">🔧 Debug Info (Click to expand)</summary>
+      <div id="debug-content" style="margin-top: 8px; font-size: 0.85em; background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace;">
+        Loading debug info...
+      </div>
+    </details>
   </div>
 </div>
 
@@ -123,14 +131,20 @@ function highlightPOIInList(poiId) {
 
 // GitHub API functions for storing check-ins
 async function loadCheckInHistory() {
+  console.log('📖 Loading check-in history...');
+  
   if (!GITHUB_CONFIG.token) {
-    console.log('No GitHub token provided - using local storage fallback');
+    console.log('❌ No GitHub token provided - using local storage fallback');
     const stored = localStorage.getItem('poi-checkins');
     checkInHistory = stored ? JSON.parse(stored) : [];
+    console.log('💾 Loaded from local storage:', checkInHistory.length, 'check-ins');
+    showNotification('📖 Loaded check-ins from local storage');
     return;
   }
 
   try {
+    console.log('🔍 Fetching from GitHub:', `${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.path}`);
+    
     const response = await fetch(`${GITHUB_CONFIG.apiUrl}/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.path}`, {
       headers: {
         'Authorization': `token ${GITHUB_CONFIG.token}`,
@@ -138,59 +152,98 @@ async function loadCheckInHistory() {
       }
     });
 
+    console.log('📥 GitHub load response status:', response.status);
+
     if (response.ok) {
       const data = await response.json();
       const content = atob(data.content.replace(/\s/g, ''));
       checkInHistory = JSON.parse(content);
+      console.log('✅ Loaded from GitHub:', checkInHistory.length, 'check-ins');
+      showNotification(`✅ Loaded ${checkInHistory.length} check-ins from GitHub`);
     } else if (response.status === 404) {
       // File doesn't exist yet, start with empty array
+      console.log('📄 File not found in GitHub - starting fresh');
       checkInHistory = [];
+      showNotification('📄 No existing check-ins found - starting fresh');
+    } else {
+      const errorText = await response.text();
+      console.error('❌ GitHub load error:', response.status, errorText);
+      throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
     }
   } catch (error) {
-    console.log('Failed to load check-in history from GitHub:', error);
+    console.error('❌ Failed to load check-in history from GitHub:', error);
+    showNotification(`❌ GitHub load failed: ${error.message}`);
+    
     // Fallback to local storage
     const stored = localStorage.getItem('poi-checkins');
     checkInHistory = stored ? JSON.parse(stored) : [];
+    console.log('💾 Fallback to local storage:', checkInHistory.length, 'check-ins');
   }
 }
 
 async function saveCheckInHistory() {
   // Always save to local storage as backup
   localStorage.setItem('poi-checkins', JSON.stringify(checkInHistory));
+  console.log('💾 Saved to local storage:', checkInHistory.length, 'check-ins');
 
   if (!GITHUB_CONFIG.token) {
-    console.log('No GitHub token - saved to local storage only');
-    return;
+    console.log('❌ No GitHub token - saved to local storage only');
+    showNotification('💾 Saved locally (no GitHub token)');
+    return false;
   }
 
   try {
+    console.log('🔍 Attempting to save to GitHub...');
+    console.log('Repository:', `${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}`);
+    console.log('File path:', GITHUB_CONFIG.path);
+    console.log('Token present:', GITHUB_CONFIG.token ? 'Yes' : 'No');
+    console.log('Token length:', GITHUB_CONFIG.token.length);
+
     // First, get the current file SHA if it exists
     let sha = null;
+    let fileExists = false;
+    
     try {
-      const response = await fetch(`${GITHUB_CONFIG.apiUrl}/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.path}`, {
+      console.log('📋 Checking if file exists...');
+      const checkResponse = await fetch(`${GITHUB_CONFIG.apiUrl}/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.path}`, {
         headers: {
           'Authorization': `token ${GITHUB_CONFIG.token}`,
           'Accept': 'application/vnd.github.v3+json'
         }
       });
-      if (response.ok) {
-        const data = await response.json();
+      
+      console.log('File check response status:', checkResponse.status);
+      
+      if (checkResponse.ok) {
+        const data = await checkResponse.json();
         sha = data.sha;
+        fileExists = true;
+        console.log('📄 File exists, SHA:', sha);
+      } else if (checkResponse.status === 404) {
+        console.log('📄 File does not exist, will create new');
+      } else {
+        const errorText = await checkResponse.text();
+        console.error('❌ File check failed:', checkResponse.status, errorText);
+        throw new Error(`GitHub file check failed: ${checkResponse.status} - ${errorText}`);
       }
     } catch (e) {
-      // File might not exist, which is fine
+      console.error('❌ Error checking file:', e);
+      throw e;
     }
 
     // Create or update the file
     const content = btoa(JSON.stringify(checkInHistory, null, 2));
     const body = {
-      message: `Update check-ins: ${new Date().toISOString()}`,
+      message: `${fileExists ? 'Update' : 'Create'} check-ins: ${new Date().toISOString()}`,
       content: content
     };
     
     if (sha) {
       body.sha = sha;
     }
+
+    console.log('📤 Sending to GitHub API...');
+    console.log('Request body:', { ...body, content: '[base64 data]' });
 
     const response = await fetch(`${GITHUB_CONFIG.apiUrl}/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.path}`, {
       method: 'PUT',
@@ -202,14 +255,24 @@ async function saveCheckInHistory() {
       body: JSON.stringify(body)
     });
 
+    console.log('📥 GitHub API response status:', response.status);
+
     if (!response.ok) {
-      throw new Error(`GitHub API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error('❌ GitHub API error response:', errorText);
+      throw new Error(`GitHub API error: ${response.status} - ${errorText}`);
     }
     
-    console.log('Check-in history saved to GitHub successfully');
+    const result = await response.json();
+    console.log('✅ Check-in history saved to GitHub successfully!');
+    console.log('📄 File URL:', result.content.html_url);
+    showNotification('✅ Saved to GitHub repository!');
+    return true;
+    
   } catch (error) {
-    console.error('Failed to save to GitHub:', error);
-    // Data is still saved locally as fallback
+    console.error('❌ Failed to save to GitHub:', error);
+    showNotification(`❌ GitHub save failed: ${error.message}`);
+    return false;
   }
 }
 
@@ -585,21 +648,28 @@ function showError(error) {
 function loadConfig() {
   // Priority order: external config.js > Vercel injected > defaults
   
+  console.log('🔍 Debug: Checking config sources...');
+  console.log('window.GITHUB_CONFIG:', window.GITHUB_CONFIG ? 'Found' : 'Not found');
+  console.log('window.VERCEL_GITHUB_TOKEN:', window.VERCEL_GITHUB_TOKEN ? 'Found (length: ' + window.VERCEL_GITHUB_TOKEN.length + ')' : 'Not found');
+  
   // 1. Try to load from external config.js file (local development)
-  if (window.GITHUB_CONFIG) {
+  if (window.GITHUB_CONFIG && window.GITHUB_CONFIG.token) {
     GITHUB_CONFIG = { ...GITHUB_CONFIG, ...window.GITHUB_CONFIG };
-    console.log('✅ Loaded config from config.js');
+    console.log('✅ Loaded config from config.js with token');
+    showNotification('🔧 Using local config.js for GitHub integration');
     return;
   }
   
   // 2. Try to load from Vercel-injected token (production)
-  if (window.VERCEL_GITHUB_TOKEN) {
+  if (window.VERCEL_GITHUB_TOKEN && window.VERCEL_GITHUB_TOKEN.trim() !== '') {
     GITHUB_CONFIG.token = window.VERCEL_GITHUB_TOKEN;
     console.log('✅ Loaded GitHub token from Vercel environment');
+    showNotification('☁️ Using Vercel environment token for GitHub integration');
     return;
   }
   
   console.log('📝 Using default config - add config.js locally or set GITHUB_TOKEN in Vercel');
+  showNotification('⚠️ No GitHub token found - check-ins will be saved locally only');
 }
 
 function updateGitHubStatus() {
@@ -612,6 +682,55 @@ function updateGitHubStatus() {
   } else {
     statusElement.textContent = 'Check-ins are saved locally. To sync with GitHub:';
   }
+  
+  updateDebugPanel();
+}
+
+function updateDebugPanel() {
+  const debugContent = document.getElementById('debug-content');
+  if (!debugContent) return;
+  
+  const debugInfo = {
+    'App Version': '1.0.0',
+    'Current Time': new Date().toISOString(),
+    'Location': userLocation.lat ? `${userLocation.lat.toFixed(5)}, ${userLocation.lon.toFixed(5)}` : 'Not detected',
+    'Config Sources': {
+      'config.js': window.GITHUB_CONFIG ? 'Found' : 'Not found',
+      'Vercel Token': window.VERCEL_GITHUB_TOKEN ? `Found (${window.VERCEL_GITHUB_TOKEN.length} chars)` : 'Not found'
+    },
+    'GitHub Config': {
+      'Owner': GITHUB_CONFIG.owner,
+      'Repo': GITHUB_CONFIG.repo,
+      'File Path': GITHUB_CONFIG.path,
+      'Token Present': GITHUB_CONFIG.token ? `Yes (${GITHUB_CONFIG.token.length} chars)` : 'No',
+      'API URL': GITHUB_CONFIG.apiUrl
+    },
+    'Storage': {
+      'Check-ins in Memory': checkInHistory.length,
+      'Local Storage': localStorage.getItem('poi-checkins') ? JSON.parse(localStorage.getItem('poi-checkins')).length : 0
+    },
+    'Browser Info': {
+      'User Agent': navigator.userAgent,
+      'Geolocation': 'geolocation' in navigator ? 'Supported' : 'Not supported'
+    }
+  };
+  
+  function formatObject(obj, indent = 0) {
+    const spaces = '  '.repeat(indent);
+    let result = '';
+    
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof value === 'object' && value !== null) {
+        result += `${spaces}${key}:\n${formatObject(value, indent + 1)}`;
+      } else {
+        result += `${spaces}${key}: ${value}\n`;
+      }
+    }
+    
+    return result;
+  }
+  
+  debugContent.innerHTML = `<pre style="margin: 0; white-space: pre-wrap;">${formatObject(debugInfo)}</pre>`;
 }
 
 // Initialize app
